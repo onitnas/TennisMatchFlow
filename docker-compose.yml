@@ -1,0 +1,72 @@
+version: '1.0'
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.1.1
+    ports:
+      - "9200:9200"
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    hostname: elasticsearch
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200 > /dev/null || exit 1"]
+      start_period: 10s
+      interval: 30s
+      timeout: 10s
+      retries: 50
+    networks:
+      - tmf-network
+    mem_limit: 1g
+
+  kafkaServer:
+    image: apache/kafka:3.9.1
+    hostname: kafkaServer
+    ports:
+      - "9092:9092"
+    
+    container_name: kafka
+    environment:
+      KAFKA_KRAFT_MODE: 'true'
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_LISTENERS: PLAINTEXT://kafkaServer:9092,CONTROLLER://kafkaServer:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafkaServer:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafkaServer:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafkaServer:9092 || exit 1"]
+      start_period: 10s
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    networks:
+      - tmf-network
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+  kafka-producer:
+    build:
+      context: ./log_script
+      dockerfile: Dockerfile
+    container_name: kafka-producer
+    depends_on:
+      kafkaServer: 
+        condition: service_healthy
+    networks:
+      - tmf-network
+      
+volumes:
+  esdata: 
+
+networks:
+  tmf-network:
