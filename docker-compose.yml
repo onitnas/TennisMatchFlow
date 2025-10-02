@@ -16,7 +16,7 @@ services:
       start_period: 10s
       interval: 30s
       timeout: 10s
-      retries: 50
+      retries: 10
     networks:
       - tmf-network
     mem_limit: 1g
@@ -54,17 +54,78 @@ services:
     depends_on:
       elasticsearch:
         condition: service_healthy
+  
+  kafka-init:
+    image: apache/kafka:3.9.1
+    container_name: kafka-init
+    depends_on:
+      kafkaServer:
+        condition: service_healthy
+
+    entrypoint: [ '/bin/sh', '-c' ]
+    command: |
+      "
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafkaServer:9092 --list
+
+      echo -e 'Creating kafka topics'
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafkaServer:9092 --create --if-not-exists --topic new_point --replication-factor 1 --partitions 1
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafkaServer:9092 --create --if-not-exists --topic data_enriched --replication-factor 1 --partitions 1
+
+      echo -e 'Successfully created the following topics:'
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafkaServer:9092 --list
+      "
+    networks:
+      - tmf-network
   kafka-producer:
     build:
-      context: ./log_script
+      context: ingestion
       dockerfile: Dockerfile
     container_name: kafka-producer
     depends_on:
       kafkaServer: 
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     networks:
       - tmf-network
-      
+  
+  kafka-connect:
+    image: confluentinc/cp-kafka-connect:7.7.5
+    container_name: kafka-connect
+    depends_on:
+      kafkaServer:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    ports:
+      - "8083:8083"
+    mem_limit: 1g
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: 'kafkaServer:9092'
+      CONNECT_REST_PORT: 8083
+      CONNECT_GROUP_ID: 'connect-cluster'
+      CONNECT_CONFIG_STORAGE_TOPIC: 'connect-configs'
+      CONNECT_OFFSET_STORAGE_TOPIC: 'connect-offsets'
+      CONNECT_STATUS_STORAGE_TOPIC: 'connect-status'
+      CONNECT_OFFSET_STORAGE_TOPIC_REPLICATION_FACTOR: 1
+      CONNECT_CONFIG_STORAGE_TOPIC_REPLICATION_FACTOR: 1
+      CONNECT_STATUS_STORAGE_TOPIC_REPLICATION_FACTOR: 1
+      CONNECT_KEY_CONVERTER: 'org.apache.kafka.connect.json.JsonConverter'
+      CONNECT_VALUE_CONVERTER: 'org.apache.kafka.connect.json.JsonConverter'
+      CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE: 'false'
+      CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: 'false'
+      CONNECT_REST_ADVERTISED_HOST_NAME: 'kafka-connect'
+      CONNECT_PLUGIN_PATH: '/usr/share/java,/usr/share/confluent-hub-components/'
+      KAFKA_HEAP_OPTS: "-Xms512M -Xmx512M"
+    volumes:
+      - ./streaming/connect-plugins:/usr/share/confluent-hub-components
+      - ./streaming/run.sh:/run.sh
+      - ./streaming/connectors:/connectors
+    networks:
+      - tmf-network
+    command: ["sh", "/run.sh"]
 volumes:
   esdata: 
 
