@@ -2,6 +2,7 @@ import json
 from kafka import KafkaProducer
 from kafka.errors import KafkaError
 import time
+import random
 
 class MatchEventProducer:
     def __init__(self, bootstrap_servers="kafkaServer:9092", events=dict):
@@ -18,7 +19,7 @@ class MatchEventProducer:
             try:
                 record_metadata = future.get(timeout=10)
                 print(f"Event sent to topic {record_metadata.topic}, partition {record_metadata.partition}, offset {record_metadata.offset}")
-                time.sleep(1)
+                time.sleep(random.uniform(15, 30))
             except KafkaError as e:
                 print(f"Failed to send event: {e}")
 

@@ -1,7 +1,7 @@
 version: '1.0'
 services:
   elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:9.1.1
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.19.4
     ports:
       - "9200:9200"
     volumes:
@@ -70,6 +70,9 @@ services:
       echo -e 'Creating kafka topics'
       /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafkaServer:9092 --create --if-not-exists --topic new_point --replication-factor 1 --partitions 1
       /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafkaServer:9092 --create --if-not-exists --topic data_enriched --replication-factor 1 --partitions 1
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafkaServer:9092 --create --if-not-exists --topic connect-configs --replication-factor 1 --partitions 1 --config cleanup.policy=compact
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafkaServer:9092 --create --if-not-exists --topic connect-offsets --replication-factor 1 --partitions 1 --config cleanup.policy=compact
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafkaServer:9092 --create --if-not-exists --topic connect-status --replication-factor 1 --partitions 1 --config cleanup.policy=compact
 
       echo -e 'Successfully created the following topics:'
       /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafkaServer:9092 --list
@@ -86,6 +89,8 @@ services:
         condition: service_healthy
       kafka-init:
         condition: service_completed_successfully
+    environment:
+      PYTHONUNBUFFERED: 1
     networks:
       - tmf-network
   
@@ -102,6 +107,12 @@ services:
     ports:
       - "8083:8083"
     mem_limit: 1g
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://kafka-connect:8083/connectors || exit 1"]
+      start_period: 10s
+      interval: 15s
+      timeout: 10s
+      retries: 10
     environment:
       CONNECT_BOOTSTRAP_SERVERS: 'kafkaServer:9092'
       CONNECT_REST_PORT: 8083
@@ -121,11 +132,21 @@ services:
       KAFKA_HEAP_OPTS: "-Xms512M -Xmx512M"
     volumes:
       - ./streaming/connect-plugins:/usr/share/confluent-hub-components
+    networks:
+      - tmf-network
+  kafka-connect-init:
+    image: alpine/curl:8.14.1
+    container_name: kafka-connect-init
+    depends_on:
+      kafka-connect:
+        condition: service_healthy
+    command: ["sh", "run.sh"]
+
+    volumes:
       - ./streaming/run.sh:/run.sh
       - ./streaming/connectors:/connectors
     networks:
       - tmf-network
-    command: ["sh", "/run.sh"]
 volumes:
   esdata: 
 
