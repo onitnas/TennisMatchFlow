@@ -173,6 +173,7 @@ services:
         condition: service_healthy
     volumes:
       - ./enrichment:/opt/spark/work-dir/enrichment
+      - ./data/spark:/data/spark
     mem_limit: 1g
   spark-worker:
     image: spark:3.5.7-python3
@@ -196,6 +197,9 @@ services:
       spark-master:
         condition: service_healthy
     mem_limit: 1g
+    volumes:
+      - ./enrichment:/opt/spark/work-dir/enrichment
+      - ./data/spark:/data/spark
   spark-submit:
     image: spark:3.5.7-python3
     container_name: spark-submit
@@ -210,6 +214,7 @@ services:
       - tmf-network
     volumes:
       - ./enrichment:/opt/spark/work-dir/enrichment
+      - ./data/spark:/data/spark
     mem_limit: 1g
 volumes:
   esdata: 

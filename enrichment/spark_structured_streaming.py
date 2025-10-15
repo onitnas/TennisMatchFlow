@@ -1,5 +1,6 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, from_json
+from fastparquet import ParquetFile
 
 class SparkStructuredStreaming:
     def __init__(self, app_name="SparkStructuredStreamingApp"):
@@ -13,6 +14,8 @@ class SparkStructuredStreaming:
             receiver STRING,
             server_score INT,
             receiver_score INT,
+            serve_number INT,
+            rally_length INT,
             event STRING,
             winner STRING,
             serve_speed_kmh DOUBLE,
@@ -21,6 +24,7 @@ class SparkStructuredStreaming:
             round STRING,
             location STRING
         """
+        
         self.spark = SparkSession.builder.appName(app_name) \
         .master("spark://spark-master:7077") \
         .getOrCreate()
@@ -41,14 +45,15 @@ class SparkStructuredStreaming:
     def write_historycal_db(self, df, output_path, checkpoint_location):
         df \
             .writeStream \
-            .outputMode("append") \
             .format("parquet") \
             .option("path", output_path) \
             .option("checkpointLocation", checkpoint_location) \
+            .partitionBy("tournament", "year", "match_id") \
+            .outputMode("append") \
             .start()
     
     
-        
+    
     def write_kafka(self, df, kafka_bootstrap_servers, topic):
         df.selectExpr("to_json(struct(*)) AS value") \
             .writeStream \
@@ -61,9 +66,9 @@ class SparkStructuredStreaming:
 if __name__ == "__main__":
     kafka_bootstrap_servers = "kafkaServer:9092"
     topic = "new_point"
-    output_path = ""
-    checkpoint_location = ""
+    output_path = "/data/spark/matches/parquet/"
+    checkpoint_location = "/data/spark/matches/checkpoint/"
     
     streaming_app = SparkStructuredStreaming()
     df = streaming_app.read_stream(kafka_bootstrap_servers, topic)
-    streaming_app.write_stream(df, output_path, checkpoint_location)
+    streaming_app.write_historycal_db(df, output_path, checkpoint_location)
