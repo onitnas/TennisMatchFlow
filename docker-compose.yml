@@ -45,13 +45,16 @@ services:
           unzip config/certs/certs.zip -d config/certs;
         fi;
         echo "Setting file permissions"
-        chown -R root:root config/certs;
+
+        chown -R 1000:1000 config/certs/;
         find . -type d -exec chmod 750 \{\} \;;
         find . -type f -exec chmod 640 \{\} \;;
-        echo "Waiting for Elasticsearch availability";
+
+        echo "Waiting for Elasticsearch availability";          
         until curl -s --cacert config/certs/ca/ca.crt https://elasticsearch:9200 | grep -q "missing authentication credentials"; do sleep 30; done;
         echo "Setting kibana_system password";
         until curl -s -X POST --cacert config/certs/ca/ca.crt -u elastic:${ELASTIC_PASSWORD} -H "Content-Type: application/json" https://elasticsearch:9200/_security/user/kibana_system/_password -d "{\"password\":\"${KIBANA_PASSWORD}\"}" | grep -q "^{}"; do sleep 10; done;
+        
         echo "All done!";
         '
     healthcheck:
@@ -77,6 +80,7 @@ services:
     volumes:
       - esdata:/usr/share/elasticsearch/data
       - certs:/usr/share/elasticsearch/config/certs
+
     hostname: elasticsearch
     container_name: elasticsearch
     environment:
@@ -103,7 +107,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "curl -s --cacert config/certs/ca/ca.crt https://localhost:9200 | grep -q 'missing authentication credentials'",
+          "curl -s --cacert config/certs/ca/ca.crt https://elasticsearch:9200 | grep -q 'missing authentication credentials'",
         ]
       interval: 10s
       timeout: 10s
@@ -133,14 +137,17 @@ services:
       - "5601:5601"
     environment:
       ELASTICSEARCH_HOSTS: 'https://elasticsearch:9200'
-      ELASTICSEARCH_USERNAME: 'kibana_system'
-      ELASTICSEARCH_PASSWORD: 'rootlibero'
-      ELASTICSEARCH_SSL_CERTIFICATEAUTHORITIES: config/certs/ca/ca.crt
+      ELASTICSEARCH_USERNAME: kibana_system
+      ELASTICSEARCH_PASSWORD: ${KIBANA_PASSWORD}
+      ELASTICSEARCH_SSL_CERTIFICATEAUTHORITIES: /usr/share/kibana/config/certs/ca/ca.crt
+      XPACK_SECURITY_ENCRYPTIONKEY: ${ENCRYPTION_KEY}
+      XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY: ${ENCRYPTION_KEY}
+      XPACK_REPORTING_ENCRYPTIONKEY: ${ENCRYPTION_KEY}
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          "curl -s -I http://localhost:5601 | grep -q 'HTTP/1.1 302 Found'",
+          "curl -s -I http://kibana:5601 | grep -q 'HTTP/1.1 302 Found'",
         ]
       interval: 10s
       timeout: 10s
@@ -219,13 +226,17 @@ services:
         condition: service_healthy
       kafka-init:
         condition: service_completed_successfully
+      kafka-connect:
+        condition: service_healthy
+      kafka-connect-init:
+        condition: service_completed_successfully
     environment:
       PYTHONUNBUFFERED: 1
     networks:
       - tmf-network
   
   kafka-connect:
-    image: confluentinc/cp-kafka-connect:7.7.5
+    image: confluentinc/cp-kafka-connect:8.1.0
     container_name: kafka-connect
     depends_on:
       kafkaServer:
@@ -262,19 +273,19 @@ services:
       KAFKA_HEAP_OPTS: "-Xms512M -Xmx512M"
     volumes:
       - ./streaming/connect-plugins:/usr/share/confluent-hub-components
+      - certs:/usr/share/elasticsearch/config/certs/
     networks:
       - tmf-network
   kafka-connect-init:
-    image: alpine/curl:8.14.1
+    build:
+      context: streaming/
+      dockerfile: Dockerfile
     container_name: kafka-connect-init
     depends_on:
       kafka-connect:
         condition: service_healthy
-    command: ["sh", "run.sh"]
-
     volumes:
-      - ./streaming/run.sh:/run.sh
-      - ./streaming/connectors:/connectors
+      - certs:/usr/share/elasticsearch/config/certs/
     networks:
       - tmf-network
   

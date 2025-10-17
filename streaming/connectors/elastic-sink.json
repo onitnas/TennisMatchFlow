@@ -3,7 +3,9 @@
   "config": {
     "connector.class": "io.confluent.connect.elasticsearch.ElasticsearchSinkConnector",
     "topics": "new_point",
-    "connection.url": "http://elasticsearch:9200",
+    "connection.url": "https://elasticsearch:9200",
+    "connection.username": "elastic",
+    "connection.password": "rootlibero",
     "key.ignore": "true",
     "schema.ignore": "true",
     "type.name": "_doc",
@@ -11,6 +13,12 @@
     "value.converter.schemas.enable": "false",
     "tasks.max": "1",
 
+    "elastic.security.protocol": "SSL",
+    "elastic.ca.cert.path": "/usr/share/elasticsearch/config/certs/ca/ca.crt",
+    "elastic.https.ssl.keystore.location": "/usr/share/elasticsearch/config/certs/keystore.jks",
+    "elastic.https.ssl.keystore.password": "rootlibero",
+    "elastic.https.ssl.truststore.location": "/usr/share/elasticsearch/config/certs/truststore.jks",
+    "elastic.https.ssl.truststore.password": "rootlibero",
     "errors.tolerance": "all",
     "errors.log.enable": "true",
     "errors.log.include.messages": "true",
