@@ -154,10 +154,13 @@ services:
     ports:
       - "8080:8080"
       - "7077:7077"
+    user: "0"
     environment:
       - SPARK_MODE=master
       - SPARK_MASTER_PORT=7077
       - SPARK_MASTER_WEBUI_PORT=8080
+      - SPARK_DAEMON_MEMORY=1g
+      - SPARK_WORKER_TIMEOUT=600
     healthcheck:
       test: ["CMD-SHELL", "curl -s http://localhost:8080 > /dev/null || exit 1"]
       start_period: 10s
@@ -173,14 +176,16 @@ services:
         condition: service_healthy
     volumes:
       - ./enrichment:/opt/spark/work-dir/enrichment
-      - ./data/spark:/data/spark
-    mem_limit: 1g
+      - parquet-data:/data/spark/matches/parquet/
+
+    mem_limit: 2g
   spark-worker:
     image: spark:3.5.7-python3
     container_name: spark-worker
     hostname: spark-worker
     ports:
       - "8081:8081"
+    user: "0"
     environment:
       - SPARK_MODE=worker
       - SPARK_MASTER=spark://spark-master:7077
@@ -188,36 +193,47 @@ services:
       - SPARK_WORKER_PORT=7000
       - SPARK_WORKER_MEMORY=1g
       - SPARK_WORKER_CORES=1
+      - SPARK_WORKER_TIMEOUT=600
     command: >
       bash -c "/opt/spark/sbin/start-worker.sh spark://spark-master:7077 &&
-             tail -f /opt/spark/logs/spark--org.apache.spark.deploy.worker.*"
+        tail -f /opt/spark/logs/spark--org.apache.spark.deploy.worker.*"
     networks:
       - tmf-network
     depends_on:
       spark-master:
         condition: service_healthy
-    mem_limit: 1g
+    mem_limit: 2g
     volumes:
       - ./enrichment:/opt/spark/work-dir/enrichment
-      - ./data/spark:/data/spark
+      - parquet-data:/data/spark/matches/parquet/
+      - parquet-data:/data/spark/checkpoint/
+
+
   spark-submit:
     image: spark:3.5.7-python3
     container_name: spark-submit
+    user: "0"
     depends_on:
       spark-master:
         condition: service_healthy
       kafkaServer:
         condition: service_healthy
     command: >
-      bash -c '/opt/spark/bin/spark-submit --master spark://spark-master:7077 --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.7 --conf spark.driver.extraJavaOptions="-Divy.cache.dir=/tmp -Divy.home=/tmp" /opt/spark/work-dir/enrichment/spark_structured_streaming.py'
+      bash -c '/opt/spark/bin/spark-submit --master spark://spark-master:7077 --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.7 --conf spark.driver.extraJavaOptions="-Divy.cache.dir=/tmp -Divy.home=/tmp" /opt/spark/work-dir/enrichment/spark_structured_streaming.py &&
+      echo "✅ Spark job completed. Container will stay alive." && tail -f /dev/null'
     networks:
       - tmf-network
     volumes:
       - ./enrichment:/opt/spark/work-dir/enrichment
-      - ./data/spark:/data/spark
+      - ./enrichment/data:/data/spark/matches/json/
+      - parquet-data:/data/spark/checkpoint/
     mem_limit: 1g
+    environment:
+      - SPARK_WORKER_MEMORY=1g
+      - SPARK_WORKER_CORES=1
+    
 volumes:
   esdata: 
-
+  parquet-data:
 networks:
   tmf-network:
